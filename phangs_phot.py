@@ -3,9 +3,10 @@
 # and https://www.astropy.org/ccd-reduction-and-photometry-guide/v/pdev/notebooks/photometry/00.00-Preface.html
 
 
-import glob 
+import glob
 import numpy as np
 import matplotlib.pyplot as plt
+import tomllib
 from sys import exit
 
 import astropy.units as u
@@ -25,10 +26,49 @@ from photutils.centroids import centroid_quadratic
 from photutils.aperture import CircularAperture, CircularAnnulus, ApertureStats
 from photutils.aperture import aperture_photometry
 
+# ------------------------------------------------
+# Configs
+# ------------------------------------------------
+
+config_file = 'config/config.toml'     # Photometry parameters
+# local_file = 'locals/local.toml'        # Paths to directories
+
+with open(config_file, 'rb') as f:
+     conf = tomllib.load(f)['parameters']
+
+# Unpack the parameters from the config file
+aperture_radius = conf['ap_phot']['aperture_radius']
+bkg_estimator = conf['source_find']['bkg_estimator']
+# Turn the bkg_estimator string into the actual class
+bkg_estimator = eval(bkg_estimator)
+print(aperture_radius)
+print(bkg_estimator)
+print(type(bkg_estimator))
+exit()
 
 # ------------------------------------------------
 # Conversions and file management
 # ------------------------------------------------
+def get_path_to_file(wdir, version, project, galaxy, ptype, filter):
+     """Get the path to the data file based on the version, project, galaxy, product type, and filter.
+     Args:
+          version: version of the data (e.g., v4p1)
+          project: JWST PID (e.g., 4793)
+          galaxy: galaxy name 
+          ptype: product type (e.g., images (for anchored), features, psfmatch, etc.)
+          filter: filter name."""
+     # TODO: Add functionality for files not in the release directory
+     path = f"{wdir}{version}/{project}/release/{galaxy}/{ptype}/*{filter}*anchor*.fits"
+
+     # Check that the path exists
+     if os.path.exists(path):
+          print(f"Found file for {galaxy} {filter} in {path}")
+     else:
+          raise FileNotFoundError(f"No file found for {galaxy} {filter} in {path}. Please check the path and file naming conventions.")
+     return path
+
+
+
 def convert_aperture_sum_Jy_per_sr_to_abmag(aperture_sum_jy_sr, header):
      """Convert aperture sum in Jy/sr to AB magnitudes.
      Args:
