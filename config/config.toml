@@ -1,6 +1,6 @@
 # Directories will be set in a locals file, not the config
 
-steps = ["source_find", "ap_phot"]
+steps = ["source_find", "photometry"]
 targets = ["ngc1097"]
 product = ["anchor"]
 bands = ["F200W"]
@@ -29,7 +29,7 @@ sharphi = 1.0
 nsources = 50000
 
 
-[parameters.ap_phot]
+[parameters.photometry]
 
 use_brightest = false
 aperture_radius = 3

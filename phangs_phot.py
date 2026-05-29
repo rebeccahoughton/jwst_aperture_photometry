@@ -33,18 +33,34 @@ from photutils.aperture import aperture_photometry
 config_file = 'config/config.toml'     # Photometry parameters
 # local_file = 'locals/local.toml'        # Paths to directories
 
-with open(config_file, 'rb') as f:
-     conf = tomllib.load(f)['parameters']
+def load_config(config_path: str) -> dict:
+    with open(config_path, "rb") as f:
+        return tomllib.load(f)
 
 # Unpack the parameters from the config file
-aperture_radius = conf['ap_phot']['aperture_radius']
-bkg_estimator = conf['source_find']['bkg_estimator']
-# Turn the bkg_estimator string into the actual class
-bkg_estimator = eval(bkg_estimator)
-print(aperture_radius)
-print(bkg_estimator)
-print(type(bkg_estimator))
-exit()
+conf = load_config(config_file)
+
+# Get top level parameters
+steps   = conf['steps']
+targets = conf['targets']
+bands   = conf['bands']
+
+# Number of galaxies to run for
+# TODO: if this is going into pjpost, then this will come from the argument 
+# TODO: parser?
+num_targets = len(targets)
+
+finder_params = conf['parameters']['source_find']
+phot_params = conf['parameters']['photometry']
+
+BKG_ESTIMATORS = {
+    "SExtractorBackground()": SExtractorBackground(),
+    "MedianBackground()": MedianBackground(),
+}
+
+bkg_estimator_str = conf['parameters']['source_find']['bkg_estimator']
+bkg_estimator     = BKG_ESTIMATORS[bkg_estimator_str]
+# exit()
 
 # ------------------------------------------------
 # Conversions and file management
@@ -532,13 +548,13 @@ if not os.path.exists(outdir):
 jwst_dir = root_dir + "centres/data/v4p1_temp/"
 
 # ------------------------------------
-# This is where we set our parameters!
-gal = 'ngc2997'
-inst = 'nircam'
-level = 'anchoring'
-mosaic_ext = 'i2d_anchor.fits'
-band = 'f212n'
-sci_ext = 0 # Which header extension we want the data from
+# # This is where we set our parameters!
+# gal = 'ngc2997'
+# inst = 'nircam'
+# level = 'anchoring'
+# mosaic_ext = 'i2d_anchor.fits'
+# band = 'f212n'
+# sci_ext = 0 # Which header extension we want the data from
 # ------------------------------------
 
 # Turn this into a filename and a path
@@ -546,55 +562,119 @@ filename = gal + "_" + inst + "_lv3_" + band + "_" + mosaic_ext
 # path = jwst_dir + gal + "/" + band.upper() + "/" + level + "/"
 path = jwst_dir# + filename
 
-# Source detection parameters
-finder = 'iraf'             # Make sure this is 'iraf' for now
-snr_threshold = 3.0         # Signal-to-noise ratio threshold for source detection
-fwhm = 2.0                  # Will be overwritten by filter FWHM later
-use_filter_fwhm = False     # If True, this overwrites the default FWHM with the empirical value for appropriate filter.
-box_size = (50,50)
-filter_size = (3,3)
-roundlo = -0.5
-roundhi = 0.5
-sharplo = 0.2
-sharphi = 1.0
-nsources = 10000 # if not None, only return this many brightest sources from the source finder
+# # Source detection parameters
+# finder = 'iraf'             # Make sure this is 'iraf' for now
+# snr_threshold = 3.0         # Signal-to-noise ratio threshold for source detection
+# fwhm = 2.0                  # Will be overwritten by filter FWHM later
+# use_filter_fwhm = False     # If True, this overwrites the default FWHM with the empirical value for appropriate filter.
+# box_size = (50,50)
+# filter_size = (3,3)
+# roundlo = -0.5
+# roundhi = 0.5
+# sharplo = 0.2
+# sharphi = 1.0
+# nsources = 10000 # if not None, only return this many brightest sources from the source finder
 
-# Finding optimal aperture parameters
-max_r = 20
-brightest_ropt = 50
-frac = 0.95
-plot_ropt = True
-# Photometry parameters
-brightest_phot = None # if not None, only do photometry on this many brightest sources in the catalog
-bkg_estimator = SExtractorBackground() # Could also be set to e.g. MedianBackground().
+# # Finding optimal aperture parameters
+# max_r = 20
+# brightest_ropt = 50
+# frac = 0.95
+# plot_ropt = True
+# # Photometry parameters
+# brightest_phot = None # if not None, only do photometry on this many brightest sources in the catalog
+# bkg_estimator = SExtractorBackground() # Could also be set to e.g. MedianBackground().
 
 
-# Update the fwhm according to the filter if use_filter_fwhm is True.
-# If use_filter_fwhm is False, stay at specified value.
-if use_filter_fwhm:
-     try:
-          fwhm = filter_fwhm[band.upper()]
-          print(f"Using FWHM of {fwhm} pixels for source detection based on JWST PSF for {band.upper()}.")
-     except KeyError:
-          print(f"Warning: FWHM for {band.upper()} not found in filter_fwhm dictionary. Using default FWHM of {fwhm} pixels for source detection.")
+def do_photometry(
+          steps, 
+          targets,
+          conf,
+     ):
 
-# Open the JWST data file abd get the image, error, SNR map, coverage mask, and header
-img, err, snr_map, coverage_mask, header = open_jwst(
-     path=path, 
-     gal=gal, 
-     dir=jwst_dir, 
-     band=band, 
-     level=level, 
-     mosaic_ext=mosaic_ext
-)
+     for gal in targets:
+          for band in bands:
+               print(f"Processing {gal} at {band}...")
 
-# Subtract background and return the background subtracted image, mean background level, 
-# background RMS, and the overall background map (for plotting)
-img_sub, bkg_mean, bkg_rms, bkg_background = subtract_bkg(
-     img=img, 
-     bkg_estimator=bkg_estimator, 
-     coverage_mask=coverage_mask
-)
+               # Open the JWST data file abd get the image, error, SNR map, coverage mask, and header
+               img, err, snr_map, coverage_mask, header = open_jwst(
+                    path=path, 
+                    gal=gal, 
+                    dir=jwst_dir, 
+                    band=band, 
+                    level=level, 
+                    mosaic_ext=mosaic_ext
+               )
+
+               # Subtract background and return the background subtracted image, mean background level, 
+               # background RMS, and the overall background map (for plotting)
+               img_sub, bkg_mean, bkg_rms, bkg_background = subtract_bkg(
+                    img=img, 
+                    bkg_estimator=bkg_estimator, 
+                    coverage_mask=coverage_mask
+               )
+
+               if 'source_find' in steps:
+                    # Get sources using the source finder
+                    sources = run_source_finder(
+                         img=img_sub, 
+                         header=header, 
+                         rms=bkg_rms, 
+                         **conf['parameters']['source_find'],
+                         # finder=finder, 
+                         # snr_threshold=snr_threshold, 
+                         # fwhm=fwhm,
+                         # brightest=nsources,
+                    )
+
+               # **** Alternatively, load in a catalog computed by another method here ****
+               # TODO: if loading in another catalog, need a path to it in local.toml. 
+               # local params also go into the main function so that if source_find is not in steps, 
+               # it opens local and searches the path for a catalog.
+
+               # Either get the optimum radius based on curve of growth...
+               if 'r_opt' in steps:
+                    print(f"Computing optimal aperture for photometry...")
+                    r_opt = get_optimal_aperture(
+                         data=img_sub, 
+                         # **conf['parameters']['r_opt'],
+                         sources=sources,
+                         max_r=max_r, 
+                         brightest=brightest_ropt, 
+                         frac=frac, 
+                         plot=plot_ropt
+                    )
+
+               # Update the fwhm according to the filter if use_filter_fwhm is True.
+               # If use_filter_fwhm is False, stay at specified value.
+               if use_filter_fwhm:
+                    try:
+                         fwhm = filter_fwhm[band.upper()]
+                         print(f"Using FWHM of {fwhm} pixels for source detection based on JWST PSF for {band.upper()}.")
+                    except KeyError:
+                         print(f"Warning: FWHM for {band.upper()} not found in filter_fwhm dictionary. Using default FWHM of {fwhm} pixels for source detection.")
+
+               # ...or just set it to a fixed value (e.g., based on the PSF FWHM)
+               print(f"Setting aperture radius to {r_opt} pixels.")
+               # Check r_opt relative to the FWHM of the filter:
+               if r_opt > 3 * fwhm:
+                    print("Large r_opt. Using PSF FWHM rather than curve of growth for photometry.")
+                    r_opt = 2.5 * fwhm
+
+               # Perform photometry with circular apertures
+               if 'aperture_photometry' in steps:
+                    print(f"Performing photometry on {len(sources)} sources with aperture radius of {r_opt} pixels.")
+                    apertures, catalog = compute_photometry(
+                         data=img_sub, 
+                         header=header, 
+                         **conf['parameters']['photometry']
+                         # sources=sources, 
+                         # r_opt=r_opt, 
+                         # brightest=brightest_phot, 
+                         # write=True, 
+                         # outdir=outdir
+                    )
+
+                    print(f"Photometry complete. Catalog has {len(catalog)} sources.")
 
 # # Plot the image, background, and background-subtracted image
 # fig, ax = plt.subplots(1, 3, figsize=(18, 6))
@@ -615,53 +695,11 @@ img_sub, bkg_mean, bkg_rms, bkg_background = subtract_bkg(
 #      im = a.images[0]
 #      plt.colorbar(im, ax=a, pad=0.01, fraction=0.05)
 # plt.tight_layout()
-
-# Get sources using the source finder
-sources = run_source_finder(
-    img=img_sub, 
-    header=header, 
-    rms=bkg_rms, 
-    finder=finder, 
-    snr_threshold=snr_threshold, 
-    fwhm=fwhm,
-    brightest=nsources
+do_photometry(
+     steps=steps, 
+     targets=targets[0], 
+     conf=conf
 )
-# exit()
-
-# **** Alternatively, load in a catalog computed by another method here ****
-
-print(f"Computing optimal aperture for photometry...")
-
-# Either get the optimum radius based on curve of growth...
-r_opt = get_optimal_aperture(
-    data=img_sub, 
-    sources=sources,
-    max_r=max_r, 
-    brightest=brightest_ropt, 
-    frac=frac, 
-    plot=plot_ropt
-)
-
-# ...or just set it to a fixed value (e.g., based on the PSF FWHM)
-print(f"Setting aperture radius to {r_opt} pixels.")
-# Check r_opt relative to the FWHM of the filter:
-if r_opt > 3 * fwhm:
-    print("Large r_opt. Using PSF FWHM rather than curve of growth for photometry.")
-    r_opt = 2.5 * fwhm
-
-# Perform photometry with circular apertures
-print(f"Performing photometry on {len(sources)} sources with aperture radius of {r_opt} pixels.")
-apertures, catalog = compute_photometry(
-    data=img_sub, 
-    header=header, 
-    sources=sources, 
-    r_opt=r_opt, 
-    brightest=brightest_phot, 
-    write=True, 
-    outdir=outdir
-)
-
-print(f"Photometry complete. Catalog has {len(catalog)} sources.")
 exit()
 
 
