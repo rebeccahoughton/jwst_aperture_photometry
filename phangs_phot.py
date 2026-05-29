@@ -7,6 +7,7 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 import tomllib
+import os
 from sys import exit
 
 import astropy.units as u
@@ -16,7 +17,6 @@ from astropy.io import fits
 from astropy.table import Table
 from astropy.table import join
 from astropy.stats import SigmaClip
-from astropy.visualization import ZScaleInterval, ImageNormalize, LogStretch
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 
 # Photutils imports
@@ -31,7 +31,7 @@ from photutils.aperture import aperture_photometry
 # ------------------------------------------------
 
 config_file = 'config/config.toml'     # Photometry parameters
-# local_file = 'locals/local.toml'        # Paths to directories
+local_file = 'locals/local.toml'        # Paths to directories
 
 def load_config(config_path: str) -> dict:
     with open(config_path, "rb") as f:
@@ -39,11 +39,16 @@ def load_config(config_path: str) -> dict:
 
 # Unpack the parameters from the config file
 conf = load_config(config_file)
+local = load_config(local_file)
 
 # Get top level parameters
 steps   = conf['steps']
 targets = conf['targets']
 bands   = conf['bands']
+projects = conf['projects']
+product = conf['product']
+version = conf['version']
+ptype = conf['ptype']
 
 # Number of galaxies to run for
 # TODO: if this is going into pjpost, then this will come from the argument 
@@ -53,19 +58,12 @@ num_targets = len(targets)
 finder_params = conf['parameters']['source_find']
 phot_params = conf['parameters']['photometry']
 
-BKG_ESTIMATORS = {
-    "SExtractorBackground()": SExtractorBackground(),
-    "MedianBackground()": MedianBackground(),
-}
-
-bkg_estimator_str = conf['parameters']['source_find']['bkg_estimator']
-bkg_estimator     = BKG_ESTIMATORS[bkg_estimator_str]
 # exit()
 
 # ------------------------------------------------
 # Conversions and file management
 # ------------------------------------------------
-def get_path_to_file(wdir, version, project, galaxy, ptype, filter):
+def get_path_to_file(wdir, version, project, galaxy, ptype):
      """Get the path to the data file based on the version, project, galaxy, product type, and filter.
      Args:
           version: version of the data (e.g., v4p1)
@@ -74,7 +72,7 @@ def get_path_to_file(wdir, version, project, galaxy, ptype, filter):
           ptype: product type (e.g., images (for anchored), features, psfmatch, etc.)
           filter: filter name."""
      # TODO: Add functionality for files not in the release directory
-     path = f"{wdir}{version}/{project}/release/{galaxy}/{ptype}/*{filter}*anchor*.fits"
+     path = f"{wdir}{version}/{project}/release/{galaxy}/{ptype}/"
 
      # Check that the path exists
      if os.path.exists(path):
@@ -141,72 +139,78 @@ def get_pixarea_in_sr(header):
      
 
 
-def open_jwst(path, gal, dir, band, level, mosaic_ext="*i2d_anchor.fits", get_coverage=True):
-    """
-    Open JWST data (from either MIRI/NIRCam) and return image, error, header.
-    Using the stage 3 aligned data products, and it defaults to the anchored mosaic (which is the most aligned product).
+def open_jwst(path, gal, dir, band, mosaic_ext="*anchor*.fits", get_coverage=True):
+     """
+     Open JWST data (from either MIRI/NIRCam) and return image, error, header.
+     Using the stage 3 aligned data products, and it defaults to the anchored mosaic (which is the most aligned product).
 
-    Args:
-        path: path to the data directory
-        gal: galaxy name
-        dir: directory name
-        band: filter name (e.g., F770W, F1000W, etc.)
-        level: useful if data is hidden in a subdirectory (typical for pjpipe outputs)
-        mosaic_ext: extension to search for (default is the anchored mosaic)
-        get_coverage: whether to return a coverage mask (default True)
-    Returns:
-        img: 2D array of the image data
-        err: 2D array of the error data
-        snr_map: 2D array of the signal-to-noise ratio (img/err)
-        coverage_mask: 2D boolean array where True indicates no coverage (NaN or zero in img or err)
-        header: FITS header of the image data
-    """
-    # Load the files
-    print(f"Searching in {path} for {band} data, with extension: {mosaic_ext}")
-    files = glob.glob(f"{path}/{gal.lower()}*{band.lower()}*{mosaic_ext}")
-    print(f"Files found: {files}")
-    
-    # Sanity check that we are getting only one aligned mosaic
-    if len(files) == 0:
-        raise FileNotFoundError(f"No files found for {band} in {dir}{gal}")
-    elif len(files) > 1:
-        print(f"Warning: Multiple files found for {band} in {dir}{gal}. Using the first one: {files[0]}")
+     Args:
+          path: path to the data directory
+          gal: galaxy name
+          dir: directory name
+          band: filter name (e.g., F770W, F1000W, etc.)
+          level: useful if data is hidden in a subdirectory (typical for pjpipe outputs)
+          mosaic_ext: extension to search for (default is the anchored mosaic)
+          get_coverage: whether to return a coverage mask (default True)
+     Returns:
+          img: 2D array of the image data
+          err: 2D array of the error data
+          snr_map: 2D array of the signal-to-noise ratio (img/err)
+          coverage_mask: 2D boolean array where True indicates no coverage (NaN or zero in img or err)
+          header: FITS header of the image data
+     """
+     # Load the files
+     print(f"Searching in {path} for {band} data, with extension: {mosaic_ext}")
+     #     files = glob.glob(f"{path}/{gal.lower()}*{band.lower()}*{mosaic_ext}")
+     files = glob.glob(path + f"*{band.lower()}*{mosaic_ext}*")
+     print(f"Files found: {files}")
 
-    # Initialize variables
-    img_file = None
-    err_file = None
+     # Sanity check that we are getting only one aligned mosaic
+     if len(files) == 0:
+          raise FileNotFoundError(f"No files found for {band} in {dir}{gal}")
+     elif len(files) > 1:
+          print(f"Warning: Multiple files found for {band} in {dir}{gal}. Using the first one: {files[0]}")
 
-    # Open the file and use extensions to assign data and header
-    with fits.open(files[0]) as hdul:
-        img_file = hdul['SCI']
-        img = img_file.data
-        header = img_file.header
-        # Error
-        err_file = hdul['ERR']
-        err = err_file.data
-        err_header = err_file.header
-    # Check the names of the image and error extensions 
-    print(f"Image file: {img_file}")
-    print(f"Error file: {err_file}")
+     # Initialize variables
+     img_file = None
+     err_file = None
 
-    # Handle NaNs and zeros
-    snr_map = np.full_like(img, np.nan)
-    valid = (np.isfinite(img)) & (np.isfinite(err)) & (err > 0)
-    snr_map[valid] = img[valid] / err[valid]
+     # Open the file and use extensions to assign data and header
+     with fits.open(files[0]) as hdul:
+          img_file = hdul['SCI']
+          img = img_file.data
+          header = img_file.header
+          # Error
+          err_file = hdul['ERR']
+          err = err_file.data
+          err_header = err_file.header
+     # Check the names of the image and error extensions 
+     print(f"Image file: {img_file}")
+     print(f"Error file: {err_file}")
 
-    # Coverage mask
-    if get_coverage:
-        coverage_mask = (~np.isfinite(img)) | (img == 0) | (err == 0)
-    else:
-        coverage_mask = None
+     # Handle NaNs and zeros
+     snr_map = np.full_like(img, np.nan)
+     valid = (np.isfinite(img)) & (np.isfinite(err)) & (err > 0)
+     snr_map[valid] = img[valid] / err[valid]
 
-    return img, err, snr_map, coverage_mask, header
+     # Coverage mask
+     if get_coverage:
+          coverage_mask = (~np.isfinite(img)) | (img == 0) | (err == 0)
+     else:
+          coverage_mask = None
+
+     return img, err, snr_map, coverage_mask, header
 
 
 # ------------------------------------------------
 # Background subtraction
 # ------------------------------------------------
-def subtract_bkg(img, box_size=(50,50), filter_size=(3, 3), bkg_estimator=MedianBackground(), coverage_mask=None):
+def subtract_bkg(img, 
+          sigma=3.0, 
+          box_size=50, 
+          filter_size=3, 
+          bkg_estimator=MedianBackground(), 
+          coverage_mask=False):
      """Estimate and subtract background from image using Background2D.
      Args:
           img: 2D array of image data
@@ -214,7 +218,7 @@ def subtract_bkg(img, box_size=(50,50), filter_size=(3, 3), bkg_estimator=Median
           filter_size: size of median filter to apply to background (in pixels)
           bkg_estimator: background estimator to use (default is MedianBackground())
           coverage_mask: boolean array where True indicates pixels to exclude from background estimation 
-                         (e.g., due to low coverage or bad data). If None, no mask is applied.
+                         (e.g., due to low coverage or bad data). If False, no mask is applied.
      Returns:
           img_sub: background-subtracted image
           bkg_mean: mean background level (in same units as img)
@@ -222,9 +226,12 @@ def subtract_bkg(img, box_size=(50,50), filter_size=(3, 3), bkg_estimator=Median
      
      # estimate background
      # TODO: need to include valid mask based on weight image or other metric
-     sigma_clip = SigmaClip(sigma=3.0)
+     sigma_clip = SigmaClip(sigma=sigma)
+     filter_size = (filter_size, filter_size)
+     box_size = (box_size, box_size)
+     bkg_estimator = eval(bkg_estimator) if isinstance(bkg_estimator, str) else bkg_estimator
 
-     if coverage_mask is None:
+     if coverage_mask is False:
           print(f"Creating coverage mask")
           coverage_mask = (~np.isfinite(img)) | (img == 0)
 
@@ -256,7 +263,7 @@ def subtract_bkg(img, box_size=(50,50), filter_size=(3, 3), bkg_estimator=Median
 # Source finding (using IRAF, DAO in progress)
 # ------------------------------------------------
 def run_source_finder(img, header, rms, finder='iraf', snr_threshold=3.0, fwhm=2.0, box_size=(50,50),
-     roundlo=-0.5, roundhi=0.5, sharplo=0.2, sharphi=1.0, brightest=50000):
+     roundlo=-0.5, roundhi=0.5, sharplo=0.2, sharphi=1.0, nsources=10000):
      """Find sources in the image using IRAFStarFinder.
      Args:
           img: 2D array of background-subtracted image data
@@ -282,7 +289,7 @@ def run_source_finder(img, header, rms, finder='iraf', snr_threshold=3.0, fwhm=2
                roundhi=roundhi,
                sharplo=sharplo,
                sharphi=sharphi,
-               brightest=brightest,
+               brightest=nsources,
           )
           # Run the source finder
           sources = source_finder(img)
@@ -294,7 +301,7 @@ def run_source_finder(img, header, rms, finder='iraf', snr_threshold=3.0, fwhm=2
                roundhi=roundhi,
                sharplo=sharplo,
                sharphi=sharphi,
-               brightest=brightest,
+               brightest=nsources,
           )
           # Run the source finder
           sources = source_finder(img)
@@ -318,6 +325,15 @@ def run_source_finder(img, header, rms, finder='iraf', snr_threshold=3.0, fwhm=2
      print(f"Found {len(sources)} sources")
      print(sources.colnames)
      return sources
+
+
+# TODO: these things
+def load_source_catalog():
+     print("Load an external source catalog to use for photometry.")
+
+     
+def filter_catalog():
+     print("Filtering catalog based on morphology and other criteria.")
 
 
 # ------------------------------------------------
@@ -394,7 +410,17 @@ def get_optimal_aperture(data, sources, max_r=32, brightest=50, frac=0.95, plot=
 
 
 # ------- Main photometry function ------------------------------------------------ 
-def compute_photometry(data, header, sources, r_opt=10, sky_in=12, sky_out=18, brightest=None, write=False, outdir='./'):
+def compute_photometry(data, 
+          header, 
+          sources, 
+          gal, 
+          band,
+          aperture_radius=10, 
+          radius_sky_in=12, 
+          radius_sky_out=18, 
+          use_brightest=False, 
+          write=False, 
+          outdir='./'):
      """Compute aperture photometry for sources and return catalog with RA, Dec, magnitudes, etc.
      
      Args:
@@ -402,8 +428,10 @@ def compute_photometry(data, header, sources, r_opt=10, sky_in=12, sky_out=18, b
           header: FITS header of the image
           sources: Table of sources from source finder 
                    (must contain xcentroid, ycentroid, flux, sharpness, roundness, mag, peak)
-          r_opt: optimal aperture radius
-          brightest: if not None, only use this many brightest sources for photometry
+          aperture_radius: radius of circular aperture to use for photometry (in pixels)
+          radius_sky_in: inner radius of the sky annulus (in pixels)
+          radius_sky_out: outer radius of the sky annulus (in pixels)
+          use_brightest: if True, only use the brightest sources for photometry
           write: if True, write catalog to outdir with name {gal}_jwst_{band}_cat.fits
           outdir: directory to write catalog if write=True
 
@@ -411,20 +439,20 @@ def compute_photometry(data, header, sources, r_opt=10, sky_in=12, sky_out=18, b
           phot_full: Table with photometry results, including RA, Dec, aperture sum, magnitudes, etc.
      """
 
-     if brightest is not None:
+     if use_brightest is not False:
           # Aperture photometry of only brightest sources
-          sources = sources[np.argsort(sources['flux'])[-brightest:]]
+          sources = sources[np.argsort(sources['flux'])[-use_brightest:]]
           print(f"using only {len(sources)} sources")
 
      # Do aperture photometry
      print(f"Doing aperture photometry...")
      positions = np.transpose((sources['xcentroid'], sources['ycentroid']))
-     apertures = CircularAperture(positions, r=r_opt)
+     apertures = CircularAperture(positions, r=aperture_radius)
      aper_stats = ApertureStats(data, apertures)
      phot_full = aperture_photometry(data, apertures, method='exact')
 
      # Annulus
-     annuli = CircularAnnulus(positions, r_in=sky_in, r_out=sky_out)
+     annuli = CircularAnnulus(positions, r_in=radius_sky_in, r_out=radius_sky_out)
      sigma_clip_bkg = SigmaClip(sigma=3.0, maxiters=5)
      # mask = annuli.to_mask(method='exact')
      # Mask the data to exclude NaNs and infs from the background estimation
@@ -493,8 +521,6 @@ def get_image3_catalog(filedir, filter, galaxy, level='lv3'):
 def cross_match_catalogs(dir, filter, galaxy, phot_full, cat_image3):
     cat_name = get_image3_catalog(dir, filter, galaxy=galaxy)
     calib_cat = Table.read(cat_name, format='ascii.ecsv')
-    # phot_full['ra'] = phot_full['ra'] - delta_ra
-    # phot_full['dec'] = phot_full['dec'] - delta_dec
 
     # Use proximity based approach to cross match the catalogs
     calib_coords = SkyCoord(ra=calib_cat['ra'] * u.deg, dec=calib_cat['dec'] * u.deg)
@@ -528,89 +554,57 @@ filter_fwhm = {
 }
 
 
-# ------------------------------------------------
-# Set parameters - to go in a config file
-# ------------------------------------------------
 
-# Path to my directory and the folder that I want outputs to be saved to
-root_dir = "/nexus/posix0/MIA-astro-env/eschinner/reho/"
-outdir = root_dir + "centres/catalogs_using_v2p0/"
+# Directories
+jwst_dir = local['jwst_dir']
+out_dir = local['out_dir']
 
 # Check that outdir exists
-import os
-if not os.path.exists(outdir):
-     raise FileNotFoundError(f"Output directory {outdir} does not exist. Please create it before running the code.")
+if not os.path.exists(out_dir):
+     raise FileNotFoundError(f"Output directory {out_dir} does not exist.")
      exit()
 
-# Path to the shared directory with all of the JWST data
-# jwst_dir = "/nexus/posix0/MIA-astro-env/eschinner/shared/PHANGS/JWST/v4p1/4793/nircam/reprocess/v4p1/"
-# Currently running locally while the new reduction is happening
-jwst_dir = root_dir + "centres/data/v4p1_temp/"
+# Determine the path based on the
+path = get_path_to_file(
+     wdir=jwst_dir, 
+     version=version, 
+     project=projects[0], 
+     galaxy=targets[0],
+     ptype=ptype[0])
 
-# ------------------------------------
-# # This is where we set our parameters!
-# gal = 'ngc2997'
-# inst = 'nircam'
-# level = 'anchoring'
-# mosaic_ext = 'i2d_anchor.fits'
-# band = 'f212n'
-# sci_ext = 0 # Which header extension we want the data from
-# ------------------------------------
-
-# Turn this into a filename and a path
-filename = gal + "_" + inst + "_lv3_" + band + "_" + mosaic_ext
-# path = jwst_dir + gal + "/" + band.upper() + "/" + level + "/"
-path = jwst_dir# + filename
-
-# # Source detection parameters
-# finder = 'iraf'             # Make sure this is 'iraf' for now
-# snr_threshold = 3.0         # Signal-to-noise ratio threshold for source detection
-# fwhm = 2.0                  # Will be overwritten by filter FWHM later
-# use_filter_fwhm = False     # If True, this overwrites the default FWHM with the empirical value for appropriate filter.
-# box_size = (50,50)
-# filter_size = (3,3)
-# roundlo = -0.5
-# roundhi = 0.5
-# sharplo = 0.2
-# sharphi = 1.0
-# nsources = 10000 # if not None, only return this many brightest sources from the source finder
-
-# # Finding optimal aperture parameters
-# max_r = 20
-# brightest_ropt = 50
-# frac = 0.95
-# plot_ropt = True
-# # Photometry parameters
-# brightest_phot = None # if not None, only do photometry on this many brightest sources in the catalog
-# bkg_estimator = SExtractorBackground() # Could also be set to e.g. MedianBackground().
-
+# This is only still here temporarily
+use_filter_fwhm = True 
 
 def do_photometry(
           steps, 
           targets,
+          use_filter_fwhm,
           conf,
      ):
+     """Main function to run the photometry steps for each galaxy and filter.
+     Args:
+          steps: list of steps to run (e.g., ['bkg_subtract', 'source_find', 'r_opt', 'photometry'])
+          targets: list of galaxy names to process
+          use_filter_fwhm: this will eventually go into the config
+          conf: dictionary of parameters from the config file."""
 
+     print(" ")
      for gal in targets:
           for band in bands:
                print(f"Processing {gal} at {band}...")
 
-               # Open the JWST data file abd get the image, error, SNR map, coverage mask, and header
+               # Open the JWST data file 
                img, err, snr_map, coverage_mask, header = open_jwst(
                     path=path, 
                     gal=gal, 
                     dir=jwst_dir, 
-                    band=band, 
-                    level=level, 
-                    mosaic_ext=mosaic_ext
+                    band=band
                )
 
-               # Subtract background and return the background subtracted image, mean background level, 
-               # background RMS, and the overall background map (for plotting)
+               # Subtract background 
                img_sub, bkg_mean, bkg_rms, bkg_background = subtract_bkg(
                     img=img, 
-                    bkg_estimator=bkg_estimator, 
-                    coverage_mask=coverage_mask
+                    **conf['parameters']['bkg_subtract'],
                )
 
                if 'source_find' in steps:
@@ -620,29 +614,21 @@ def do_photometry(
                          header=header, 
                          rms=bkg_rms, 
                          **conf['parameters']['source_find'],
-                         # finder=finder, 
-                         # snr_threshold=snr_threshold, 
-                         # fwhm=fwhm,
-                         # brightest=nsources,
                     )
 
                # **** Alternatively, load in a catalog computed by another method here ****
                # TODO: if loading in another catalog, need a path to it in local.toml. 
-               # local params also go into the main function so that if source_find is not in steps, 
-               # it opens local and searches the path for a catalog.
 
                # Either get the optimum radius based on curve of growth...
                if 'r_opt' in steps:
                     print(f"Computing optimal aperture for photometry...")
                     r_opt = get_optimal_aperture(
-                         data=img_sub, 
-                         # **conf['parameters']['r_opt'],
-                         sources=sources,
-                         max_r=max_r, 
-                         brightest=brightest_ropt, 
-                         frac=frac, 
-                         plot=plot_ropt
+                         data = img_sub, 
+                         sources = sources,
+                         **conf['parameters']['r_opt']
                     )
+               else:
+                    r_opt = conf['parameters']['photometry']['aperture_radius']
 
                # Update the fwhm according to the filter if use_filter_fwhm is True.
                # If use_filter_fwhm is False, stay at specified value.
@@ -664,14 +650,10 @@ def do_photometry(
                if 'aperture_photometry' in steps:
                     print(f"Performing photometry on {len(sources)} sources with aperture radius of {r_opt} pixels.")
                     apertures, catalog = compute_photometry(
-                         data=img_sub, 
-                         header=header, 
+                         data = img_sub, 
+                         header = header, 
+                         sources = sources,
                          **conf['parameters']['photometry']
-                         # sources=sources, 
-                         # r_opt=r_opt, 
-                         # brightest=brightest_phot, 
-                         # write=True, 
-                         # outdir=outdir
                     )
 
                     print(f"Photometry complete. Catalog has {len(catalog)} sources.")
@@ -695,9 +677,11 @@ def do_photometry(
 #      im = a.images[0]
 #      plt.colorbar(im, ax=a, pad=0.01, fraction=0.05)
 # plt.tight_layout()
+
 do_photometry(
      steps=steps, 
-     targets=targets[0], 
+     targets=targets, 
+     use_filter_fwhm=use_filter_fwhm,
      conf=conf
 )
 exit()

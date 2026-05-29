@@ -1,26 +1,32 @@
 # Directories will be set in a locals file, not the config
 
 steps = ["source_find", "photometry"]
-targets = ["ngc1097"]
+targets = ["ngc1097", "ngc1512"]
 product = ["anchor"]
 bands = ["F200W"]
-version = ["v4p1"]
+version = 'v4p1'
 ptype = ["images"]
+projects = ["4793"]
 
-[parameters.source_find]
+[parameters.r_opt]
 
-# Background subtraction
-sigma_to_clip = 3.0
+max_r = 20
+brightest_ropt = 50
+frac = 0.95
+plot = true
+
+[parameters.bkg_subtract]
+
+sigma = 3.0
 coverage_mask = false
 box_size = 50
 filter_size = 3
 bkg_estimator = 'SExtractorBackground()'
 
-# Source finding
-do_source_find = true
+[parameters.source_find]
+
 finder = 'iraf'
 snr_threshold = 3.0
-use_filter_fwhm = false
 fwhm = 2.0
 roundlo = -0.5
 roundhi = 0.5
@@ -38,3 +44,4 @@ radius_sky_in = 5
 radius_sky_out = 10
 sigma_to_cip = 3.0
 maxiters = 5
+write = false
