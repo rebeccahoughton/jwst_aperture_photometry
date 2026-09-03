@@ -2,11 +2,12 @@
 # note: we don't have a way to save the bkgsub image yet so it has to be recreated if you do find or aperture_photometry
 
 # steps = ["subtract_bkg", "source_find", "aperture_photometry", "apcorr", "residual", "psffit"]
-steps = ["psffit"]
+steps = ["subtract_bkg","aperture_photometry","apcorr","residual"]
 targets = ["ngc3351"]
 product = ""
-bands = ["convolved_pah_f360m"]
-# bands = ["F335M"]
+# bands = ["convolved_pah_f360m"]
+# bands = ["F1000W"]
+bands = ["convolved_pah_f360m","F335M","F200W","F300M","F360M","F770W","F1000W"]
 version = ''
 ptype = [""]
 projects = [""]
@@ -45,6 +46,9 @@ sharplo = 0.2
 sharphi = 1.0
 nsources = 100000
 # find_cat_filename = '' # override default of f"{gal}_jwst_{band}_find_cat." + cat_filetype
+# find_cat_filename = 'ngc3351_jwst_convolved_pah_f360m_find_cat.csv'
+# use the pah photometered catalog here to get the same brightest 36 sources - also have to re-force the conv_pah itself in "bands"
+find_cat_filename = 'ngc3351_jwst_convolved_pah_f360m_phot_cat_r2.86.csv'
 
 [parameters.apcorr]
 
@@ -72,6 +76,7 @@ overwrite = true
 cat_filetype = "csv"    # csv, fits, or other type that astropy table recognizes
 local_bkg_subtract = true
 # phot_cat_filename = '' # option to override default f"{gal}_jwst_{band}_cat." + cat_filetype
+
 
 [parameters.residual]
 
