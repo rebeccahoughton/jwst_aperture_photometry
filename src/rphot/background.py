@@ -6,6 +6,7 @@ from astropy.io import fits
 from astropy.stats import SigmaClip
 from astropy.visualization import ImageNormalize, LogStretch
 from photutils.background import Background2D, MedianBackground, SExtractorBackground
+from sys import exit
 
 from rphot.io import open_jwst
 
@@ -139,6 +140,7 @@ def subtract_bkg(image_path,
             image_path=image_path,
             out_dir=out_dir,
             header=header,
+            out_dir=out_dir,
             **kwargs,
         )
     else:
