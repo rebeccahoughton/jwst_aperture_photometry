@@ -15,8 +15,6 @@ from scipy.ndimage import rotate
 from .io import load_filter_data, get_psf_file
 from .units import im2flux, flux2im
 
-# cat_filetype, lowfluxlim
-
 filter_fwhm_pix, filter_wave = load_filter_data()
 
 # Take an image clip and return the residual after subtracting the PSFcores of sources as defined by params
@@ -118,9 +116,9 @@ def residual(params,imclip,return_type,psfcore,scor_pix,sfitrgn_pix,njparams):
 
 
 def fit_and_subtract(infile, # input mosaic image 
+                gal=None,
                 band="pah33",
                 srcfile=None, # source catalog to use for fitting 
-                file_root="psffit",
                 pixbinfactor=1.,
                 fittype="amp", # "amp" or "amppos" or "ampwid" or None to just create residual
                 doplot=True,
@@ -131,7 +129,12 @@ def fit_and_subtract(infile, # input mosaic image
                 doregion=False,
                 rd0=[0,0], # center of region to fit in degrees
                 d=0.01, # size of region to fit in degrees
-                radius=None
+                radius=None,
+                # TODO make flux limits unit-aware
+                lowfluxlim = 1e-5, # below this its a nondetection           
+                psf_dir="./",
+                cat_filetype="ecsv",
+                local={}, config={}
                 ):
 
     from lmfit import minimize, Parameters, create_params
@@ -145,16 +148,16 @@ def fit_and_subtract(infile, # input mosaic image
 
     imfloor=1 # add a floor to the image for display only
     origfluxcut = 0.5 # filter for only sources with aperture flux above this value
-    froot = file_root
     fiteverything=True # if False, only fit crowded sources
     plotborder=0 # fraction of sfitrgn_pix to include around the border when displaying the region
     alpha=0.5 # for overplotting sources
     larger_sfitrgn_pix=False
     debug=False # stop every source and show neighbors etc
-
+    file_root = f"{gal}_{band}"
     
     #---------------------------------------------
     # load input image
+    # TODO use load_jwst instead of manually opening the FITS file and handling extensions
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -166,7 +169,7 @@ def fit_and_subtract(infile, # input mosaic image
             message=r".*datfix.*",
             category=FITSFixedWarning,
         )
-        for whathdu in extensions_to_try:
+        for whathdu in ['SCI','CONTSUB','PRIMARY']:
             if whathdu in fits.open(infile):
                 break
         inhdu = fits.open(infile)[whathdu]
@@ -206,7 +209,7 @@ def fit_and_subtract(infile, # input mosaic image
     
     #---------------------------------------------
     # set up psfs - expects 4 x oversampled psf in the file
-    psffile = get_psf_file(band)
+    psffile = get_psf_file(band,psf_dir=psf_dir)
 
     psfdat=fits.getdata(psffile)
     #OVERSAMP=                    4 / Oversampling factor for FFTs in computation
@@ -218,7 +221,9 @@ def fit_and_subtract(infile, # input mosaic image
     # doesn't really do much for for miri;
     # 3.6sub has point sources at widths of 0.19" up to compact sources of 0.32"
     # 4 pixel width =16 quarter pix should get us up to the more extended sources
-    widths=[0,2,6,10]     
+    widths=[0,2,6,10] 
+    # finer grid 
+    widths=np.arange(10) 
     nbroad=len(widths)
     
     s=psfdat.shape
@@ -304,13 +309,13 @@ def fit_and_subtract(infile, # input mosaic image
     
     if larger_sfitrgn_pix:
         sfitrgn_pix *=2 
-        froot+="_sfitrgnx2"
+        file_root += "_sfitrgnx2"
     
     if sfitrgn_pix[0]/2!=sfitrgn_pix[0]//2:
         raise ValueError("sfitrgn_pix is odd")
     
     if doregion:
-        froot+="_region"
+        file_root += "_region"
         cdec=np.cos(rd0[1]*np.pi/180)
         subim_xy=np.int32(inwcs.wcs_world2pix([[rd0[0]-d/cdec,rd0[1]-d],[rd0[0]+d/cdec,rd0[1]+d]],0))
         if larger_sfitrgn_pix: # does this work?  seems off?
@@ -666,48 +671,52 @@ def fit_and_subtract(infile, # input mosaic image
             plt.xlim(plotborder*sfitrgn_pix[0],s[1]-plotborder*sfitrgn_pix[0])
             plt.ylim(plotborder*sfitrgn_pix[1],s[0]-plotborder*sfitrgn_pix[1])
             inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=resid
-            inhdu.writeto(froot+"_resid_region_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(local['out_image_dir'] + "/" + file_root+"_resid_region_"+fittype+".fits",overwrite=True)
         else:
             inhdu.data=resid.value
-            inhdu.writeto(froot+"_resid_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(local['out_image_dir'] + "/" + file_root+"_resid_"+fittype+".fits",overwrite=True)
 
         # save the model image after fitting
         if doregion:
             inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=model.value
-            inhdu.writeto(froot+"_model_region_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(local['out_image_dir'] + "/" + file_root+"_model_region_"+fittype+".fits",overwrite=True)
         else:
             inhdu.data=model.value
-            inhdu.writeto(froot+"_model_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(local['out_image_dir'] + "/" + file_root+"_model_"+fittype+".fits",overwrite=True)
 
 
     # save the residual image without fitting
     resid_suffix = f"_resid_apphot_r{radius:4.2f}" if radius is not None else "_resid_apphot"
     if doregion:
         inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=resid_nofit.value
-        inhdu.writeto(froot+resid_suffix+"_region.fits",overwrite=True)
+        inhdu.writeto(local['out_image_dir'] + "/" + file_root+resid_suffix+"_region.fits",overwrite=True)
     else:
         inhdu.data=resid_nofit.value
-        inhdu.writeto(froot+resid_suffix+".fits",overwrite=True)
+        inhdu.writeto(local['out_image_dir'] + "/" + file_root+resid_suffix+".fits",overwrite=True)
     # save the model image without fitting
     model_suffix = f"_model_apphot_r{radius:4.2f}" if radius is not None else "_model_apphot"
     if doregion:
         inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=model_nofit.value
-        inhdu.writeto(froot+model_suffix+"_region.fits",overwrite=True)
+        inhdu.writeto(local['out_image_dir'] + "/" + file_root+model_suffix+"_region.fits",overwrite=True)
     else:
         inhdu.data=model_nofit.value
-        inhdu.writeto(froot+model_suffix+".fits",overwrite=True)
+        inhdu.writeto(local['out_image_dir'] + "/" + file_root+model_suffix+".fits",overwrite=True)
 
 
     if fittype is not None:
         srclist['psffit_ra'] = rdout[:,0]
         srclist['psffit_dec'] = rdout[:,1]
         srclist.add_columns([newflux,jout,wout,fitted,bgfit],
-                            names=["psffit_"+fittype,
+                            names=["psffit_"+fittype+'_flux',
                                    'psffit_'+fittype+'_jout',
                                    'psffit_'+fittype+'_wout',
                                    'psffit_'+fittype+'_nfitted',
                                    'psffit_'+fittype+'_bkg'])
-        srclist.write(froot+"_phot_cat."+cat_filetype,overwrite=True)
+        source_file = file_root + "_phot_cat"
+        if 'phot_cat_extrastring' in config['parameters']['photometry']:
+            if config['parameters']['photometry']['phot_cat_extrastring'] is not None and len(config['parameters']['photometry']['phot_cat_extrastring']) > 0:
+                source_file += "_" + config['parameters']['photometry']['phot_cat_extrastring']
+        srclist.write(local['out_dir'] + "/" + source_file+"."+cat_filetype,overwrite=True)
         panels=[1,2,3]
     else:
         panels=[1,2]
@@ -777,9 +786,9 @@ def fit_and_subtract(infile, # input mosaic image
             plt.yscale("log")
             plt.xlabel("aperture photometry")
             plt.ylabel("psf-fitted photometry")
-            plt.savefig(froot+"_"+fittype+"_residuals.png")
+            plt.savefig(local['out_dir'] + "/" + file_root+"_"+fittype+"_residuals.png")
         else:
-            plt.savefig(froot+"_apphot_residuals.png")
+            plt.savefig(local['out_dir'] + "/" + file_root+"_apphot_residuals.png")
         plt.close()
 
     return srclist

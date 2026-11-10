@@ -1,0 +1,85 @@
+# Directories will be set in a locals file, not the config
+# note: we don't have a way to save the bkgsub image yet so it has to be recreated if you do find or aperture_photometry
+
+steps = ["subtract_bkg", "source_find", "aperture_photometry", "apcorr", "residual", "psffit"]
+targets = ["ngc3351"]
+product = ""
+bands = ["convolved_pah_f360m"]
+version = ''
+ptype = [""]
+projects = [""]
+inst = ["NIRCam"]
+# note, this has to keep units - e.g. ecsv works but not csv
+cat_filetype = "ecsv"
+
+doregion = true
+region_center =  [160.9913, 11.7050] # 3351 N ring r=0.002
+region_size = 0.001
+
+[parameters.r_opt]
+
+max_r = 20
+brightest_ropt = 50
+frac = 0.95
+plot = true
+
+[parameters.bkg_subtract]
+
+sigma = 3.0
+coverage_mask = false
+# background parameters can be specified in _pix or in _pc;  if both are present, _pix takes precedence
+# box_size_pc = 100
+# filter_size_pc = 15
+# ngc3351(10Mpc) 15pc is too small;  at 20Mpc 30pc is less than the psf, so maybe doing this in pix is better
+box_size_pix = 100
+filter_size_pix = 10
+bkg_estimator = 'SExtractorBackground()'
+sigma_to_clip_bkg = 3.0
+maxiters_for_bkg_clip = 5
+# only set this if you want to override the sample table
+# dist_Mpc =5.2     
+plot = false
+
+[parameters.source_find]
+
+finder = 'peaks'
+snr_threshold = 15.0
+fwhm = 2.5
+roundlo = -0.5
+roundhi = 0.5
+sharplo = 0.2
+sharphi = 1.0
+nsources = 100000
+# find_cat_filename = '' # override default of f"{gal}_jwst_{band}_find_cat." + cat_filetype
+
+[parameters.apcorr]
+
+# for method=crds, you input an eefraction, and it calculates the radius to use for photometry
+# for method=cluster, the corrections determined for the specific Rodriguez aperture radii are used
+# for method=psf, you set the radius in photometry with fwhm2rad, radius_sky_in, radius_sky_out, and then 
+#     it calculates the ap corr from the psf for you.
+
+eefraction_value = 0.80
+apcorr_method = 'psf'
+
+[parameters.photometry]
+
+use_brightest = 2000  # 0=False or a number
+# TODO add an option to make this scale with r_opt
+# RH had 2.5x which is very large. 1 is a little tight maybe. 1.5 seems ok for now
+fwhm2rad = 1.5
+use_filter_fwhm = true
+# aperture_radius_arcsec = 0.18
+# radius_sky can either be a number in pixels, or a string like "2r" to indicate 2*aperture radius
+radius_sky_in  = 8
+radius_sky_out = 10
+sigma_to_clip_bkg = 3.0
+maxiters_for_bkg_clip = 5
+write = true
+overwrite = true
+local_bkg_subtract = true
+# phot_cat_filename = '' # option to override default f"{gal}_jwst_{band}_cat." + cat_filetype
+
+[parameters.psffit]
+
+fittype="ampwid"

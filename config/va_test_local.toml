@@ -1,0 +1,7 @@
+# Paths
+jwst_dir = 'tests/pahsub'
+out_dir = 'tests/out'
+out_image_dir = 'tests/out'
+psf_dir = 'tests/pahsub'
+crds_dir = ""
+

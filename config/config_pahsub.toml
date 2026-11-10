@@ -2,11 +2,11 @@
 # note: we don't have a way to save the bkgsub image yet so it has to be recreated if you do find or aperture_photometry
 
 steps = ["subtract_bkg", "source_find", "aperture_photometry", "apcorr", "residual", "psffit"]
-# steps = ["psffit"]
 # steps = ["subtract_bkg", "source_find", "aperture_photometry", "apcorr"] 
-targets = ["ngc3351"]
+targets = ["ngc1672"]
 product = ""
-bands = ["convolved_pah_f360m"]
+# bands = ["convolved_pah_f360m"]
+bands = ["F300M"]
 # bands = ["F187N"]
 version = ''
 ptype = [""]
@@ -15,7 +15,7 @@ inst = ["NIRCam"]
 # note, this has to keep units - e.g. ecsv works but not csv
 cat_filetype = "ecsv"
 
-doregion = true
+doregion = false
 # NGC5068 [199.729, -21.040]. # .01
 region_center =  [160.9913, 11.7050] # 3351 N ring r=0.002
 #region_center =  [161.005, 11.696] # 3351 E r=0.005
@@ -73,6 +73,8 @@ use_brightest = 2000  # 0=False or a number
 # TODO add an option to make this scale with r_opt
 # RH had 2.5x which is very large. 1 is a little tight maybe. 1.5 seems ok for now
 fwhm2rad = 1.5
+use_filter_fwhm = true
+# aperture_radius_arcsec = 0.18
 # radius_sky can either be a number in pixels, or a string like "2r" to indicate 2*aperture radius
 radius_sky_in  = 8
 radius_sky_out = 10

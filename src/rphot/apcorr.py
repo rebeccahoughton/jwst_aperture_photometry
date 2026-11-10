@@ -1,4 +1,4 @@
-import glob
+import glob, os
 import numpy as np
 import astropy.units as u
 from astropy.io import fits
@@ -130,7 +130,10 @@ def get_apcorr_params(crds_dir, band, inst, eefraction_value=0.8, apcorr_method=
 
 
 
-def get_apcorr_from_psf(band, r_ap, r_sky_in, r_sky_out, psf_dir):
+def get_apcorr_from_psf(band, r_ap, r_sky_in, r_sky_out, 
+                        psf_dir="./",
+                        psf_file=None # psf_file will override psf_dir if provided
+                        ):
     """
     Get aperture correction from PSF for a given band and aperture parameters.
 
@@ -139,11 +142,15 @@ def get_apcorr_from_psf(band, r_ap, r_sky_in, r_sky_out, psf_dir):
     band : str
         The band of the observation.
     r_ap : array-like
-        Aperture radii
+        Aperture radii in native (not oversampled) pixel units.
     r_sky_in : array-like
         Inner radii of the sky annulus.
     r_sky_out : array-like
         Outer radii of the sky annulus.
+    psf_dir : str, optional
+        Directory containing PSF files. Default is "./".
+    psf_file : str, optional
+        Specific PSF file to use. Overrides psf_dir if provided.
 
     Returns
     -------
@@ -153,10 +160,11 @@ def get_apcorr_from_psf(band, r_ap, r_sky_in, r_sky_out, psf_dir):
     apcor = np.zeros_like(r_ap, dtype=float)
 
     # Find the PSF file for this band and load the oversampled PSF image.
-    psf_file = get_psf_file(band, psf_dir)
+    if psf_file is None:
+        psf_file = get_psf_file(band, psf_dir)
     psf_data = fits.getdata(psf_file)
 
-    # Operate in oversampled (quarter-pixel) coordinates.
+    # input values are in pixel units, not oversampled coordinates. They will be multiplied by the oversampling factor later.
     r_ap = np.asarray(r_ap, dtype=float)
     r_sky_in = np.asarray(r_sky_in, dtype=float)
     r_sky_out = np.asarray(r_sky_out, dtype=float)
@@ -171,9 +179,17 @@ def get_apcorr_from_psf(band, r_ap, r_sky_in, r_sky_out, psf_dir):
     npix_ap = np.zeros(r_ap.shape, dtype=float)
     npix_ann = np.zeros(r_ap.shape, dtype=float)
 
+    # check the pixel oversampling
+    if 'OVERSAMP' in fits.getheader(psf_file):
+        oversamp = fits.getheader(psf_file)['OVERSAMP']
+    else:
+        print("WARNING: OVERSAMP keyword not found in PSF header. Assuming oversampling factor of 4.")
+        oversamp = 4
+    
+
     for i in np.ndindex(r_ap.shape):
-        aper = CircularAperture(pos, r=4.0 * r_ap[i])
-        ann = CircularAnnulus(pos, r_in=4.0 * r_sky_in[i], r_out=4.0 * r_sky_out[i])
+        aper = CircularAperture(pos, r = oversamp * r_ap[i])
+        ann = CircularAnnulus(pos, r_in = oversamp * r_sky_in[i], r_out = oversamp * r_sky_out[i])
         ap_phot = aperture_photometry(psf_data, aper, method='exact')
         ann_phot = aperture_photometry(psf_data, ann, method='exact')
 

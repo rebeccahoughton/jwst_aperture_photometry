@@ -182,7 +182,7 @@ def run_source_finder(img,
             cat_name = kwargs["find_cat_filename"]
         else:
             cat_name = f"{gal}_{band}_find_cat." + cat_filetype
-        print(f"Writing catalog to {out_dir + cat_name}")
-        sources.write(out_dir + cat_name, overwrite=overwrite)
+        print(f"Writing catalog to {out_dir + '/' + cat_name}")
+        sources.write(out_dir + '/' + cat_name, overwrite=overwrite)
 
     return sources

@@ -36,8 +36,9 @@ from astroquery.svo_fps import SvoFps
 # Configs
 # ------------------------------------------------
 
-config_file = 'config/config.toml'     # Photometry parameters
-local_file = 'config/mpcdf.toml'       # Paths to directories
+config_file = 'config/va_test1.toml'     # Photometry parameters
+local_file = 'config/va_test_local.toml'       # Paths to directories
+
 # TODO make flux limits unit-aware
 lowfluxlim = 1e-5 # below this its a nondetection
 
@@ -88,7 +89,7 @@ def load_filter_data(csv_path=None):
     return fwhm, wave
 
 
-filter_fwhm_pix, filter_wave = load_filter_data()
+filter_fwhm_pix, filter_wave = load_filter_data(csv_path="src/data/filter_data.csv")
 
 
 # ------------------------------------------------
@@ -411,7 +412,7 @@ def calculate_bkg(img,
     # print(f"bkg array {bkg.background}")
     if image_path is not None:
         # background_path = out_dir + "/" + os.path.basename(image_path).replace(".fits", "_background.fits")
-        background_path = out_dir + f"/{gal}_{band}_background.fits"
+        background_path = out_image_dir + f"/{gal}_{band}_background.fits"
         out_header = header.copy() if header is not None else fits.Header()
         hdu = fits.PrimaryHDU(data=np.asarray(bkg.background, dtype=float), header=out_header)
         hdu.writeto(background_path, overwrite=True)
@@ -420,7 +421,7 @@ def calculate_bkg(img,
     # threshold_img = snr_threshold * bkg.background_rms
     img_sub = img - bkg.background
 
-    bgsub_path = out_dir + f"/{gal}_{band}_bgsub.fits"
+    bgsub_path = out_image_dir + f"/{gal}_{band}_bgsub.fits"
     out_header = header.copy() if header is not None else fits.Header()
     hdu = fits.PrimaryHDU(data=np.asarray(img_sub, dtype=float), header=out_header)
     hdu.writeto(bgsub_path, overwrite=True)
@@ -466,7 +467,7 @@ def subtract_bkg(image_path,
         maxiters_for_bkg_clip=5,
         **kwargs):
     """Create a cached background FITS file if needed and subtract it from the image."""
-    background_path = out_dir + f"/{gal}_{band}_background.fits"
+    background_path = out_image_dir + f"/{gal}_{band}_background.fits"
     
     if not os.path.exists(background_path):
         print(f"Background file not found for {image_path}. Calculating background...")
@@ -847,7 +848,7 @@ def compute_photometry(data,
          maxiters_for_bkg_clip: maximum iterations for sigma clipping of background
          phot_method: method to use for photometry (e.g., 'exact', 'subpixel', etc.)
          doplot: if True, generate diagnostic plots
-         write: if True, write catalog to out_dir with name {gal}_{band}_cat.fits
+         write: if True, write catalog to out_dir with name {gal}_{band}_cat.{cat_filetype}
          phot_cat_filename: filename for the output photometry catalog
          overwrite: if True, overwrite existing catalog file
          apcorr_method: method for aperture correction (e.g., 'psf')
@@ -947,7 +948,11 @@ def compute_photometry(data,
             category=FITSFixedWarning,
         )
         wcs = WCS(header)
-    ra, dec = wcs.all_pix2world(phot_full["x_center"], phot_full["y_center"], 0)
+    # the return column name changes from photutils 2 to 3
+    if "x_center" in phot_full.colnames:
+        ra, dec = wcs.all_pix2world(phot_full["x_center"], phot_full["y_center"], 0)
+    else:
+        ra, dec = wcs.all_pix2world(phot_full["xcenter"], phot_full["ycenter"], 0)
     pixscale = wcs.proj_plane_pixel_scales()[0].to("arcsec")
     phot_full["ra"]  = np.round(ra ,8)
     phot_full["dec"] = np.round(dec,8)
@@ -1009,8 +1014,7 @@ def compute_photometry(data,
 
     # Write the catalog if requested
     if write:
-        if phot_cat_filename is None:
-            phot_cat_filename = f"{gal}_{band}_phot_cat_r{radius:4.2f}." + cat_filetype
+        
         print(f"Writing catalog to {out_dir + phot_cat_filename}")
         # make a plain table to avoid serialized columns, which break TopCat
         #Table(phot_full).write(out_dir + phot_cat_filename, overwrite=overwrite)
@@ -1294,7 +1298,7 @@ def get_apcorr_params(crds_dir, band, inst, eefraction_value=0.8, apcorr_method=
 
     return radius, sky_in, sky_out, apcorr
 
-def get_psf_file(band):
+def get_psf_file(band,psf_dir):
     candidates = glob.glob(psf_dir + f"PSF*{band}*fits")
 
     if len(candidates) == 0:
@@ -1467,9 +1471,9 @@ def get_apcorr_from_psf(band,r_ap,r_sky_in,r_sky_out):
 
 #=====================================================================================
 def fit_and_subtract(infile, # input mosaic image 
+                gal="ngc628",
                 band="pah33",
                 srcfile=None, # source catalog to use for fitting 
-                file_root="psffit",
                 pixbinfactor=1.,
                 fittype="amp", # "amp" or "amppos" or "ampwid" or None to just create residual
                 doplot=True,
@@ -1494,7 +1498,7 @@ def fit_and_subtract(infile, # input mosaic image
 
     imfloor=1 # add a floor to the image for display only
     origfluxcut = 0.5 # filter for only sources with aperture flux above this value
-    froot = file_root
+    froot = f"{gal}_{band}"
     fiteverything=True # if False, only fit crowded sources
     plotborder=0 # fraction of sfitrgn_pix to include around the border when displaying the region
     alpha=0.5 # for overplotting sources
@@ -2015,36 +2019,36 @@ def fit_and_subtract(infile, # input mosaic image
             plt.xlim(plotborder*sfitrgn_pix[0],s[1]-plotborder*sfitrgn_pix[0])
             plt.ylim(plotborder*sfitrgn_pix[1],s[0]-plotborder*sfitrgn_pix[1])
             inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=resid
-            inhdu.writeto(froot+"_resid_region_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(out_image_dir + froot+"_resid_region_"+fittype+".fits",overwrite=True)
         else:
             inhdu.data=resid.value
-            inhdu.writeto(froot+"_resid_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(out_image_dir + froot+"_resid_"+fittype+".fits",overwrite=True)
 
         # save the model image after fitting
         if doregion:
             inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=model.value
-            inhdu.writeto(froot+"_model_region_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(out_image_dir + froot+"_model_region_"+fittype+".fits",overwrite=True)
         else:
             inhdu.data=model.value
-            inhdu.writeto(froot+"_model_"+fittype+".fits",overwrite=True)
+            inhdu.writeto(out_image_dir + froot+"_model_"+fittype+".fits",overwrite=True)
 
 
     # save the residual image without fitting
     resid_suffix = f"_resid_apphot_r{radius:4.2f}" if radius is not None else "_resid_apphot"
     if doregion:
         inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=resid_nofit.value
-        inhdu.writeto(froot+resid_suffix+"_region.fits",overwrite=True)
+        inhdu.writeto(out_image_dir + froot+resid_suffix+"_region.fits",overwrite=True)
     else:
         inhdu.data=resid_nofit.value
-        inhdu.writeto(froot+resid_suffix+".fits",overwrite=True)
+        inhdu.writeto(out_image_dir + froot+resid_suffix+".fits",overwrite=True)
     # save the model image without fitting
     model_suffix = f"_model_apphot_r{radius:4.2f}" if radius is not None else "_model_apphot"
     if doregion:
         inhdu.data[subim_xy[0][1]:subim_xy[1][1]+1,subim_xy[1][0]:subim_xy[0][0]+1]=model_nofit.value
-        inhdu.writeto(froot+model_suffix+"_region.fits",overwrite=True)
+        inhdu.writeto(out_image_dir + froot+model_suffix+"_region.fits",overwrite=True)
     else:
         inhdu.data=model_nofit.value
-        inhdu.writeto(froot+model_suffix+".fits",overwrite=True)
+        inhdu.writeto(out_image_dir + froot+model_suffix+".fits",overwrite=True)
 
 
     if fittype is not None:
@@ -2056,7 +2060,11 @@ def fit_and_subtract(infile, # input mosaic image
                                    'psffit_'+fittype+'_wout',
                                    'psffit_'+fittype+'_nfitted',
                                    'psffit_'+fittype+'_bkg'])
-        srclist.write(froot+"_phot_cat."+cat_filetype,overwrite=True)
+        source_file = out_dir + froot+"_phot_cat"
+        if 'phot_cat_extrastring' in phot_params:
+            if phot_params['phot_cat_extrastring'] is not None and len(phot_params['phot_cat_extrastring']) > 0:
+                source_file += phot_params['phot_cat_extrastring']
+        srclist.write(source_file+"."+cat_filetype,overwrite=True)
         panels=[1,2,3]
     else:
         panels=[1,2]
@@ -2126,9 +2134,9 @@ def fit_and_subtract(infile, # input mosaic image
             plt.yscale("log")
             plt.xlabel("aperture photometry")
             plt.ylabel("psf-fitted photometry")
-            plt.savefig(froot+"_"+fittype+"_residuals.png")
+            plt.savefig(out_dir + froot+"_"+fittype+"_residuals.png")
         else:
-            plt.savefig(froot+"_apphot_residuals.png")
+            plt.savefig(out_dir + froot+"_apphot_residuals.png")
         plt.close()
 
     return srclist
@@ -2178,6 +2186,10 @@ def cross_match_catalogs(dir, filter, galaxy, phot_full, cat_image3):
 # Directories
 jwst_dir = local['jwst_dir']
 out_dir = local['out_dir']
+if local['out_image_dir'] != "":
+    out_image_dir = local['out_image_dir']
+else:
+    out_image_dir = local['out_dir']
 psf_dir = local['psf_dir']
 crds_dir = local['crds_dir']
 cat_path = local['out_dir']  
@@ -2240,7 +2252,7 @@ def do_photometry(
             # Open the JWST data file 
             img, err, snr_map, coverage_mask, header = open_jwst(datafile)
             # get distance from the galaxy sample table (override with config file)
-            sample_tab = Table.read("phangs_sample_table_v1p6.ecsv")
+            sample_tab = Table.read("src/data/phangs_sample_table_v1p6.ecsv")
             dist_Mpc = sample_tab[sample_tab['name'] == gal]['dist'][0]
             if 'dist_Mpc' in conf['parameters']['bkg_subtract']:
                 dist_Mpc = conf['parameters']['bkg_subtract']['dist_Mpc']
@@ -2337,6 +2349,8 @@ def do_photometry(
 
                 if 'ID_phangs' in sources.colnames:
                     sources['id'] = sources['ID_phangs']
+                if 'ID_source' in sources.colnames:
+                    sources['id'] = sources['ID_source']
 
                 # Checks that the colnames include x_centroid, y_centroid, flux, sharpness, roundness, mag, peak, etc. 
                 # and print a warning if any are missing
@@ -2407,11 +2421,14 @@ def do_photometry(
             #      print("Large r_opt. Using PSF FWHM rather than curve of growth for photometry.")
             #      r_opt = 2.5 * fwhm
 
-            # Load the filename from the config
-            if "phot_cat_filename" in conf['parameters']['photometry']:
-                cat_filename = conf['parameters']['photometry']['phot_cat_filename']
+            if 'phot_cat_filename' in phot_params:
+                phot_cat_filename = phot_params['phot_cat_filename']
             else:
-                cat_filename = f"{gal}_{band}_phot_cat_r{r_opt:4.2f}." + cat_filetype
+                phot_cat_filename = f"{gal}_{band}_phot_cat_r{r_opt:4.2f}." + cat_filetype
+                if 'phot_cat_extrastring' in phot_params:
+                    if phot_params['phot_cat_extrastring'] is not None and len(phot_params['phot_cat_extrastring']) > 0:
+                        phot_cat_filename = f"{gal}_{band}_phot_cat_{phot_params['phot_cat_extrastring']}_r{r_opt:4.2f}." + cat_filetype
+
 
             # Perform photometry with circular apertures
             if 'aperture_photometry' in steps:
@@ -2428,7 +2445,7 @@ def do_photometry(
                     sources = sources,
                     apcorr_method = apcorr_method,
                     # TODO put out_dir in cat_filename 
-                    phot_cat_filename = cat_filename,
+                    phot_cat_filename = phot_cat_filename,
                     out_dir = local['out_dir'],
                     **conf['parameters']['photometry']
                 )
@@ -2441,7 +2458,7 @@ def do_photometry(
                 catalogs[gal][band] = catalog
 
                 # ds9 region file for visualizing sources
-                ds9reg=open(local['out_dir']+'.'.join(cat_filename.split('.')[:-1])+".reg","w")
+                ds9reg=open(local['out_dir']+'.'.join(phot_cat_filename.split('.')[:-1])+".reg","w")
                 ds9reg.write("fk5\n")
                 r_opt_asec = r_opt * header['CDELT2'] * 3600.  # convert pixels to arcseconds
                 for src in catalog:
@@ -2459,7 +2476,7 @@ def do_photometry(
 
 
             else:
-                phot_cat_path = os.path.join(local['out_dir'], cat_filename)
+                phot_cat_path = os.path.join(local['out_dir'], phot_cat_filename)
                 if os.path.exists(phot_cat_path):
                     catalogs[gal][band] = QTable.read(phot_cat_path)
                     print(f"Loaded photometry catalog from {phot_cat_path}")
@@ -2478,9 +2495,9 @@ def do_photometry(
                     fittype=None
                 catalog = fit_and_subtract(
                     datafile,
+                    gal=gal,
                     band=band,
-                    srcfile=local['out_dir']+cat_filename, # source catalog to use for fitting 
-                    file_root=local['out_dir'] + f"{gal}_{band}",
+                    srcfile=local['out_dir']+phot_cat_filename, # source catalog to use for fitting 
                     pixbinfactor=1.,
                     fittype=fittype, # "amp" or "amppos" or "ampwid" but here we want None to just create residual
                     doplot=True,

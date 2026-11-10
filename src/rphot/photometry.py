@@ -10,8 +10,8 @@ from astropy.visualization import ImageNormalize, LogStretch
 from photutils.aperture import CircularAperture, CircularAnnulus, ApertureStats
 from photutils.aperture import aperture_photometry
 
-from .units import convert_aperture_sum_Jy_per_sr_to_abmag, im2flux
-from .apcorr import get_apcorr_from_psf, get_apcorr_params
+from rphot.units import convert_aperture_sum_Jy_per_sr_to_abmag, im2flux
+from rphot.apcorr import get_apcorr_from_psf, get_apcorr_params
 
 
 def get_optimal_aperture(data, sources, max_r=32, brightest=50, frac=0.95, doplot=True):
@@ -216,7 +216,11 @@ def compute_photometry(data,
         phot_full['finder_centroid_fail'] = sources['reject']
     if 'id' in sources.colnames:
         phot_full['id'] = sources['id']
-
+    if 'ID_phangs' in sources.colnames:
+        sources['id'] = sources['ID_phangs']
+    if 'ID_source' in sources.colnames:
+        sources['id'] = sources['ID_source']
+    
     # Include ra, dec
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -225,7 +229,10 @@ def compute_photometry(data,
             category=FITSFixedWarning,
         )
         wcs = WCS(header)
-    ra, dec = wcs.all_pix2world(phot_full["x_center"], phot_full["y_center"], 0)
+    if "x_center" in phot_full.colnames:
+        ra, dec = wcs.all_pix2world(phot_full["x_center"], phot_full["y_center"], 0)
+    else:
+        ra, dec = wcs.all_pix2world(phot_full["xcenter"], phot_full["ycenter"], 0)
     pixscale = wcs.proj_plane_pixel_scales()[0].to("arcsec")
     phot_full["ra"]  = np.round(ra ,8)
     phot_full["dec"] = np.round(dec,8)
@@ -289,10 +296,10 @@ def compute_photometry(data,
     if write:
         if phot_cat_filename is None:
             phot_cat_filename = f"{gal}_{band}_phot_cat_r{radius:4.2f}." + cat_filetype
-        print(f"Writing catalog to {out_dir + phot_cat_filename}")
+        print(f"Writing catalog to {out_dir + "/" + phot_cat_filename}")
         # make a plain table to avoid serialized columns, which break TopCat
         #Table(phot_full).write(out_dir + phot_cat_filename, overwrite=overwrite)
-        phot_full.write(out_dir + phot_cat_filename, overwrite=overwrite)
+        phot_full.write(out_dir + "/" + phot_cat_filename, overwrite=overwrite)
 
     if doplot:
         # plot photometry results
@@ -322,8 +329,12 @@ def compute_photometry(data,
         hi_label_added = False
         lo_label_added = False
         for idx in range(len(phot_full)):
-            x = phot_full['x_center'][idx]
-            y = phot_full['y_center'][idx]
+            if "x_center" in phot_full.colnames:
+                x = phot_full['x_center'][idx]
+                y = phot_full['y_center'][idx]
+            else:
+                x = phot_full['xcenter'][idx]
+                y = phot_full['ycenter'][idx]
             linewidth = 1
             alpha = 0.7     
             if snr[idx] > err_threshold:
@@ -365,7 +376,10 @@ def compute_photometry(data,
                                  gridspec_kw={'left':0.02,'bottom':0.02,'top':0.98,'right':0.98,
                                               'wspace': 0.01, 'hspace': 0.01})
         for i, (ax, row) in enumerate(zip(axes.flatten(), brightest_sources_apcorr)):
-            x, y = row['x_center'], row['y_center']
+            if "x_center" in row.colnames:
+                x, y = row['x_center'], row['y_center']
+            else:
+                x, y = row['xcenter'], row['ycenter']   
             cutout_size = np.max([radius*4, radius_sky_out*1.1, min_halfcut_pix]) # actually, half-cutout size
             x_min, x_max = int(x - cutout_size), int(x + cutout_size)
             y_min, y_max = int(y - cutout_size), int(y + cutout_size)
@@ -399,8 +413,12 @@ def compute_photometry(data,
             #ax.text(0.08, 0.05, f"{x:.0f},{y:.0f}", color='cyan', fontsize=8, ha='left', va='center', transform=ax.transAxes)
             ax.text(0.08, 0.05, f"{row['ra']:.4f},{row['dec']:.4f}", color='cyan', fontsize=6, ha='left', va='center', transform=ax.transAxes)
             # Select all sources in the catalog that are within the cutout region
-            sources_in_cutout = phot_full[(phot_full['x_center'] > x_min) & (phot_full['x_center'] < x_max) & (phot_full['y_center'] > y_min) & (phot_full['y_center'] < y_max)]
-            ax.scatter(sources_in_cutout['x_center'], sources_in_cutout['y_center'], s=50, edgecolor='cyan', facecolor='none', lw=1.0, alpha=0.5)
+            if 'x_center' in phot_full.colnames:
+                sources_in_cutout = phot_full[(phot_full['x_center'] > x_min) & (phot_full['x_center'] < x_max) & (phot_full['y_center'] > y_min) & (phot_full['y_center'] < y_max)]
+                ax.scatter(sources_in_cutout['x_center'], sources_in_cutout['y_center'], s=50, edgecolor='cyan', facecolor='none', lw=1.0, alpha=0.5)
+            else:
+                sources_in_cutout = phot_full[(phot_full['xcenter'] > x_min) & (phot_full['xcenter'] < x_max) & (phot_full['ycenter'] > y_min) & (phot_full['ycenter'] < y_max)]
+                ax.scatter(sources_in_cutout['xcenter'], sources_in_cutout['ycenter'], s=50, edgecolor='cyan', facecolor='none', lw=1.0, alpha=0.5)
         plt.savefig(out_dir+f"/{gal}_{band}_cutouts_brightest_r{radius:4.2f}.png", dpi=400)
         plt.close(fig)
 

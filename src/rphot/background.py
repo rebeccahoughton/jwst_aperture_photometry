@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.stats import SigmaClip
 from astropy.visualization import ImageNormalize, LogStretch
-from photutils.background import Background2D, MedianBackground
+from photutils.background import Background2D, MedianBackground, SExtractorBackground
 
-from .io import open_jwst
+from rphot.io import open_jwst
 
 def calculate_bkg(img,
         gal,
@@ -120,7 +120,7 @@ def subtract_bkg(image_path,
         out_dir="./",
         **kwargs):
     """Create a cached background FITS file if needed and subtract it from the image."""
-    background_path = out_dir + f"{gal}_{band}_background.fits"
+    background_path = out_dir + f"/{gal}_{band}_background.fits"
     
     if not os.path.exists(background_path):
         print(f"Background file not found for {image_path}. Calculating background...")
@@ -137,6 +137,7 @@ def subtract_bkg(image_path,
             sigma_to_clip_bkg=sigma_to_clip_bkg,
             maxiters_for_bkg_clip=maxiters_for_bkg_clip,
             image_path=image_path,
+            out_dir=out_dir,
             header=header,
             **kwargs,
         )

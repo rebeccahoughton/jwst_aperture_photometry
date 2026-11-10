@@ -1,7 +1,6 @@
 # Paths
-jwst_dir = '/Users/ri3e/cv/galaxies/phangsdata/'
-# jwst_dir = '/Users/ri3e/cv/galaxies/nearby/'
-out_dir = '/Users/ri3e/cv/galaxies/phot/'
-psf_dir = '/Users/ri3e/cv/jwst_clusters/instrument/psf/'
+jwst_dir = '/nexus/posix0/MIA-astro-env/eschinner/shared/PHANGS/JWST/'
+out_dir = '/nexus/posix0/MIA-astro-env/eschinner/reho/centres/ecmz_clusters/catalogs/'
+psf_dir = '/nexus/posix0/MIA-astro-env/eschinner/reho/jwst_kernels/data/PSF/'
 crds_dir = "/nexus/posix0/MIA-astro-env/eschinner/jgonzalez/jwst_pipeline/crds_cache/jwst_ops/references/jwst/nircam/"
 

@@ -1,10 +1,4 @@
 {
     "python-envs.defaultEnvManager": "ms-python.python:conda",
-    "python-envs.defaultPackageManager": "ms-python.python:conda",
-    "chat.tools.terminal.autoApprove": {
-        "/^/Users/ri3e/miniforge3/envs/pphot/bin/python -m py_compile phangs_phot\\.py$/": {
-            "approve": true,
-            "matchCommandLine": true
-        }
-    }
+    "python-envs.defaultPackageManager": "ms-python.python:conda"
 }

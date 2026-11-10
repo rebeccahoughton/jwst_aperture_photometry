@@ -1,7 +1,7 @@
 [project]
-name = "jwst_aperture_photometry"
+name = "rphot"
 version = "0.1.0"
-description = "Source finder and aperture photometry tool for JWST and HST imaging data"
+description = "Source finder and photometry tool for JWST and HST imaging data"
 readme = "README.md"
 license = { file = 'LICENSE' }
 classifiers = [
@@ -10,11 +10,11 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-requires-python ">=3.11"
+requires-python = ">=3.11"
 
 authors = [
-	{name = "Rebecca J. Houghton", email = astro.rhoughton@gmail.com},
-	{name = "Remy Indebetouw", email = remy@virginia.edu},
+	{name = "Rebecca J. Houghton", email = "astro.rhoughton@gmail.com"},
+	{name = "Remy Indebetouw", email = "indebetouw@gmail.com"},
 ]
 
 dependencies = [

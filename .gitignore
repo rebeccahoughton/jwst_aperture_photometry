@@ -2,13 +2,12 @@
 __pycache__/
 
 # local config file
-/config/mac.toml
 jwst_aperture_photometry_rh.code-workspace
-config/local.toml
 .vscode/
 .ipynb_checkpoints/
 .vscode/settings.json
 .vscode/launch.json
+/tests/out/
 
 # Build artifacts
 build/

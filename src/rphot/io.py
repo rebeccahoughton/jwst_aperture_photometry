@@ -89,8 +89,7 @@ def get_file(wdir, version, project, galaxy, ptype, filter):
 
 
 
-
-def open_jwst(filename, get_coverage=True, extensions_to_try=['SCI']):
+def open_jwst(filename, get_coverage=True, extensions_to_try=['SCI','CONTSUB','PRIMARY']):
     """
     Open data and return image, error, header.
     Using the stage 3 aligned data products, and it defaults to the anchored mosaic (which is the most aligned product).
@@ -172,10 +171,16 @@ def open_jwst(filename, get_coverage=True, extensions_to_try=['SCI']):
 
 
 def get_psf_file(band, psf_dir):
-    candidates = glob.glob(psf_dir + f"PSF*{band}*fits")
+    candidates = glob.glob(psf_dir + f"/PSF*{band}*fits")
 
     if len(candidates) == 0:
         raise FileNotFoundError(f"No PSF files found for {band} in {psf_dir}")
     elif len(candidates) > 1:
-        print(f"Multiple PSF files found for {band} in {psf_dir}. Using the first one: {candidates[0]}")
+        print(f"Multiple PSF files found for {band} in {psf_dir}.")
+        cand2=np.array([x for x in candidates if 'gauss' not in x]) 
+        if len(cand2) > 0:
+            print(f"Using the first non-gauss one: {cand2[0]}")
+            return cand2[0]
+        else:
+            print(f"Using the first one: {candidates[0]}")
     return candidates[0]  

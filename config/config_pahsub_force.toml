@@ -3,10 +3,12 @@
 
 # steps = ["subtract_bkg", "source_find", "aperture_photometry", "apcorr", "residual", "psffit"]
 steps = ["subtract_bkg", "aperture_photometry", "apcorr", "residual", "psffit"] 
-targets = ["ngc3351"]
+targets = ["ngc1672"]
 product = ""
 # NGC5068 has no PaA, and 657->658
-bands = ["convolved_pah_f360m","F657","F187N","F200W","F300M","F335M","F360M","F770W","F1000W"]
+# bands = ["convolved_pah_f360m","F657","F187N","F200W","F300M","F335M","F360M","F770W","F1000W"]
+# NGC1672 doesn't have 657/Ha
+bands = ["convolved_pah_f360m","F187N","F200W","F300M","F335M","F360M","F770W","F1000W"]
 # bands = ["F657","F187N","F1000W"]
 version = ''
 ptype = [""]
@@ -52,8 +54,8 @@ sharphi = 1.0
 nsources = 100000
 # find_cat_filename = '' # override default of f"{gal}_jwst_{band}_find_cat." + cat_filetype
 # use the pah photometered catalog here to get the same brightest 36 sources - also have to re-force the conv_pah itself in "bands"
-find_cat_filename = 'ngc3351_convolved_pah_f360m_phot_cat_r2.86.ecsv'
-# find_cat_filename = 'ngc1672_convolved_pah_f360m_phot_cat_r2.86.ecsv'
+# find_cat_filename = 'ngc3351_convolved_pah_f360m_phot_cat_r2.86.ecsv'
+find_cat_filename = 'ngc1672_convolved_pah_f360m_phot_cat_r2.86.ecsv'
 
 [parameters.apcorr]
 
@@ -71,15 +73,22 @@ use_brightest = 2000  # 0=False or a number
 # TODO add an option to make this scale with r_opt
 # RH had 2.5x which is very large. 1 is a little tight maybe. 1.5 seems ok for now
 fwhm2rad = 1.5
+use_filter_fwhm = false 
+# can be scaler, or array with same number of elements as "bands"
+# bands = ["convolved_pah_f360m","F657","F187N","F200W","F300M","F335M","F360M","F770W","F1000W"]
+# aperture_radius_arcsec = [0.124, 0.15848, 0.124,0.124,0.124,0.124,0.124, 0.168, 0.209]
+# 1672 has no Ha
+aperture_radius_arcsec = [0.124, 0.124,0.124,0.124,0.124,0.124, 0.168, 0.209]
 # radius_sky can either be a number in pixels, or a string like "2r" to indicate 2*aperture radius
-radius_sky_in  = 8
-radius_sky_out = 10
+radius_sky_in  = "2r"
+radius_sky_out = "3r"
 sigma_to_clip_bkg = 3.0
 maxiters_for_bkg_clip = 5
 write = true
 overwrite = true
 local_bkg_subtract = true
 # phot_cat_filename = '' # option to override default f"{gal}_jwst_{band}_cat." + cat_filetype
+phot_cat_extrastring = "from_33pah"   # add this to the filenames
 
 [parameters.psffit]
 
