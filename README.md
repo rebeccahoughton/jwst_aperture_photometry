@@ -1,6 +1,6 @@
 # PHANGS-JWST Aperture Photometry
  
-A Python pipeline for performing aperture photometry on JWST NIRCam and MIRI imaging data from the [PHANGS-JWST survey](https://sites.google.com/view/phangs/home). The pipeline handles the full workflow from loading mosaics to producing calibrated photometric catalogs, including background subtraction, source detection, optimal aperture selection, and aperture corrections.
+A Python pipeline for performing aperture photometry on HST, JWST NIRCam, and JWST MIRI imaging data from the [PHANGS-JWST survey](https://sites.google.com/view/phangs/home). The pipeline handles the full workflow from loading mosaics to producing calibrated photometric catalogs, including background subtraction, source detection, optimal aperture selection, and aperture corrections.
 
 **IMPORTANT: THIS MODULE IS STILL IN DEVELOPMENT. Please expect bugs. It is being updated regularly and currently does not have the QA infrastructure to know that the output catalogs are reliable.** 
  
@@ -20,23 +20,38 @@ This module takes JWST stage 3 mosaic products (typically anchored mosaics in FI
 - Flux conversion from Jy/sr (or MJy/sr) to AB magnitudes
 - Catalog output in FITS or CSV format
 - Quality-assurance (QA) plots [*in development*]
+- Residual image generation with stars subtracted [*in development*]
 
 ## Repository Structure
  
 ```
-jwst_aperture_photometry/
-├── phangs_phot.py          # Main pipeline: runs all steps for each galaxy/filter
-├── ap_phot.py              # Core photometry utilities (background subtraction, curve of growth)
-├── source_find.py          # Source detection wrappers
-├── io.py                   # I/O helpers
-├── qa_plots.py             # Quality assurance plots
-├── apcorr_rodriguez.ecsv   # Empirical aperture corrections (Rodriguez et al. 2025)
+jwst_aperture_photometry/          
+├── pyproject.toml
+├── README.md
+├── LICENSE
+├── src/
+│   └── rphot/
+│       ├── __init__.py        # API + __version__
+│       ├── io.py              # finding, opening, and reading data files
+│       ├── units.py           # flux to mag, image units to flux units, etc.
+│       ├── background.py      # 2D background estimation + subtraction
+│       ├── detect.py          # source finder (currently IRAF and peaks supported)
+│       ├── catalog.py         # catalog matching
+│       ├── apcorr.py          # aperture correction
+│       ├── photometry.py      # core photometry computation
+│       ├── residuals.py       # residual image creation
+│       └── main.py            # run the full pipeline
+├── phangs_phot.py             # legacy code from before modularization
+├── tests/
+│   ├── tbc.py                 # tests
+│   ├── ....
+│   └── ....
 ├── config/
-│   ├── config.toml         # Photometry parameters (targets, filters, pipeline steps)
-│   └── mpcdf.toml          # Local paths (data directory, output directory, CRDS directory)
-├── catalogs/               # Output photometric catalogs (*Do not use* - just for testing)
-├── tests/                  # Unit tests
-└── aperture_phot_example.ipynb  # **OUTDATED**
+│   ├── config.toml            # photometry parameters (targets, filters, pipeline steps)
+│   └── local.toml             # Local paths (data directory, output directory, CRDS directory)
+├── scripts/                   # helpful scripts for development testing
+├── catalogs/                  # *DO NOT USE* - left from initial testing
+└── examples/                  # notebooks
 ```
 
 ---
@@ -70,13 +85,13 @@ cd jwst_aperture_photometry
  
 ## Configuration
  
-All pipeline settings are controlled by two TOML files in the `config/` directory.
+All pipeline settings are controlled by two TOML files in the `config/` directory. You can create new config and local files for your science goal and track them in your .gitignore.
  
 ### `config/config.toml` — photometry parameters
  
-This file specifies which galaxies and filters to process, which pipeline steps to run, and the parameters for each step.
+This file specifies which galaxies and filters to process, which pipeline steps to run, and the parameters for each step. 
 
-### `config/mpcdf.toml` — local paths
+### `config/local.toml` — local paths
  
 ```toml
 jwst_dir  = "/path/to/jwst/data/"
@@ -90,17 +105,10 @@ crds_dir  = "/path/to/crds/apcorr/files/"
  
 ### Running the full pipeline
  
-Edit the two config files to point at your data and set your parameters, then run:
+Edit the two config files to point at your data and set your parameters, then runfrom the terminal in jwst_aperture_photometry/src as:
  
-```python
-import phangs_phot as pp
- 
-pp.do_photometry(
-    steps=pp.steps,
-    targets=pp.targets,
-    use_filter_fwhm=True,
-    conf=pp.conf,
-)
+```bash
+python -m rphot.main
 ```
  
 This loops over all galaxies and filters defined in `config.toml`, running whichever steps are listed in `steps`.
@@ -108,10 +116,11 @@ This loops over all galaxies and filters defined in `config.toml`, running which
 
 ## Aperture Corrections
  
-Two methods are supported, set via `apcorr_method` in the config:
+Three methods are supported, set via `apcorr_method` in the config:
  
 - **`crds`** — Uses the official JWST Calibration Reference Data System (CRDS) `apcorr` files for NIRCam. Derives the aperture radius, sky annulus radii, and correction factor for a specified encircled energy fraction (default: 80%).
 - **`cluster`** — Uses empirical correction factors for star clusters from Rodriguez et al. (2025), based on Deger et al. (2022). Valid for a fixed aperture radius of 4 pixels. Corrections are provided in Vega magnitudes and converted to AB internally via SVO filter zero points.
+- **`psf`** - Calculates the aperture correction from the image PSF
 - **Note that aperture corrections for custom radii are not currently available, as the curve of growth radii still needs some improvement**.
 
 
